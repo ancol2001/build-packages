@@ -8,27 +8,22 @@ checksum=$2
 app_revision=$3
 
 # Paths
-plugin_platform_dir="/tmp/source"
-source_dir="${plugin_platform_dir}/plugins"
-packages_list=( "main_wazuh" "wazuh-check-updates_wazuhCheckUpdates" "wazuh-core_wazuhCore" )
-destination_dir="/wazuh_app"
+plugin_platform_dir="/tmp/antest/OpenSearch-Dashboards"
+source_dir="${plugin_platform_dir}/plugins/wazuh"
+build_dir="${source_dir}/build"
+destination_dir="/lancs_dashboard"
 checksum_dir="/var/local/checksum"
-git_clone_tmp_dir="/tmp/wazuh-app"
+git_clone_tmp_dir="/tmp/lancs_dashboard"
 
 # Repositories URLs
-wazuh_app_clone_repo_url="https://github.com/wazuh/wazuh-dashboard-plugins.git"
 wazuh_app_raw_repo_url="https://raw.githubusercontent.com/wazuh/wazuh-dashboard-plugins"
-plugin_platform_app_repo_url="https://github.com/opensearch-project/OpenSearch-Dashboards.git"
 plugin_platform_app_raw_repo_url="https://raw.githubusercontent.com/opensearch-project/OpenSearch-Dashboards"
-wazuh_app_package_json_url="${wazuh_app_raw_repo_url}/${wazuh_branch}/plugins/main/package.json"
-wazuh_app_nvmrc_url="${wazuh_app_raw_repo_url}/${wazuh_branch}/.nvmrc"
 
 # Script vars
 wazuh_version=""
 plugin_platform_version=""
 plugin_platform_yarn_version=""
 plugin_platform_node_version=""
-
 
 change_node_version () {
     installed_node_version="$(node -v)"
@@ -45,49 +40,43 @@ change_node_version () {
     echo "Using $(node -v) node version"
 }
 
-
 prepare_env() {
-    echo "Downloading package.json and .nvmrc from wazuh-dashboard-plugins repository"
-    if ! curl $wazuh_app_package_json_url -o "/tmp/package.json" ; then
-        echo "Error downloading package.json from GitHub."
+# Lay 2 file o trong repo wazuh-dashborad-plugin
+    echo "Using local package.json and .nvmrc from /tmp directory"
+
+    if [ ! -f /tmp/ahihi/package.json ]; then
+        echo "Error: /tmp/lancs_dashboard/plugins/main/package.json not found."
         exit 1
     fi
 
-    if ! curl $wazuh_app_nvmrc_url -o "/tmp/.nvmrc" ; then
-        echo "Error downloading .nvmrc from GitHub."
-        exit 1
-    fi
-    wazuh_version=$(python -c 'import json, os; f=open("/tmp/package.json"); pkg=json.load(f); f.close();\
-                    print(pkg["version"])')
-    plugin_platform_version=$(python -c 'import json, os; f=open("/tmp/package.json"); pkg=json.load(f); f.close();\
-                    plugin_platform_version=pkg.get("pluginPlatform", {}).get("version");\
-                    print(plugin_platform_version)')
-
-    plugin_platform_package_json_url="${plugin_platform_app_raw_repo_url}/${plugin_platform_version}/package.json"
-
-    echo "Downloading package.json from opensearch-project/OpenSearch-Dashboards repository"
-    if ! curl $plugin_platform_package_json_url -o "/tmp/package.json" ; then
-        echo "Error downloading package.json from GitHub."
+    if [ ! -f /tmp/ahihi/nvmrc ]; then
+        echo "Error: /tmp/.nvmrc not found."
         exit 1
     fi
 
-    plugin_platform_node_version=$(cat /tmp/.nvmrc)
+    wazuh_version=$(python -c 'import json, os; f=open("/tmp/ahihi/package.json"); pkg=json.load(f); f.close(); print(pkg["version"])')
+    plugin_platform_version=$(python -c 'import json, os; f=open("/tmp/ahihi/package.json"); pkg=json.load(f); f.close(); plugin_platform_version=pkg.get("pluginPlatform", {}).get("version"); print(plugin_platform_version)')
 
-    plugin_platform_yarn_version=$(python -c 'import json, os; f=open("/tmp/package.json"); pkg=json.load(f); f.close();\
-                          print(str(pkg["engines"]["yarn"]).replace("^",""))')
+# Lay 2 file trong opensearch-dashborad
+    plugin_platform_node_version=$(cat /tmp/ahihi/nvmrc)
+    plugin_platform_node_version="v18.20.3"
+    echo "Using local OpenSearch-Dashboards package.json from /tmp directory"
+    if [ ! -f /tmp/antest/OpenSearch-Dashboards/package.json ]; then
+        echo "Error: /tmp/antest/OpenSearch-Dashboards/package.json not found."
+        exit 1
+    fi
+
+    plugin_platform_yarn_version=$(python -c 'import json, os; f=open("/tmp/antest/OpenSearch-Dashboards/package.json"); pkg=json.load(f); f.close(); print(str(pkg["engines"]["yarn"]).replace("^",""))')
+    plugin_platform_yarn_version="1.22.19"
 }
-
 
 download_plugin_platform_sources() {
-    if ! git clone $plugin_platform_app_repo_url --branch "${plugin_platform_version}" --depth=1 plugin_platform_source; then
-        echo "Error downloading OpenSearch-Dashboards source code from opensearch-project/OpenSearch-Dashboards GitHub repository."
+    echo "Using existing OpenSearch-Dashboards source code from /tmp directory"
+    if [ ! -d ${plugin_platform_dir} ]; then
+        echo "Error: opensearch directory not found."
         exit 1
     fi
-
-    mkdir -p plugin_platform_source/plugins
-    mv plugin_platform_source ${plugin_platform_dir}
 }
-
 
 install_dependencies () {
     cd ${plugin_platform_dir}
@@ -96,72 +85,45 @@ install_dependencies () {
 
     sed -i 's/node scripts\/build_ts_refs/node scripts\/build_ts_refs --allow-root/' ${plugin_platform_dir}/package.json
     sed -i 's/node scripts\/register_git_hook/node scripts\/register_git_hook --allow-root/' ${plugin_platform_dir}/package.json
-
+    ls /tmp/antest
     yarn osd bootstrap --skip-opensearch-dashboards-plugins
 }
 
-
 download_wazuh_app_sources() {
-    if ! git clone $wazuh_app_clone_repo_url --branch ${wazuh_branch} --depth=1 ${git_clone_tmp_dir}; then
-        echo "Error downloading the source code from wazuh-dashboard-app GitHub repository."
+    echo "Using existing Wazuh source code from /tmp directory"
+    if [ ! -d ${git_clone_tmp_dir} ]; then
+        echo "Error: ${git_clone_tmp_dir} directory not found."
         exit 1
     fi
 
-    for item in ${packages_list[@]}; do
-        array=(${item//_/ })
-        cp -r "${git_clone_tmp_dir}/plugins/${array[0]}" "${source_dir}/${array[0]}"
-    done
-}
-
-check_revisions() {
-    dirs=()
-    for item in ${packages_list[@]}; do
-        dirs+=(${item//_/ })
-    done
-
-    main_revision=$(jq -r '.revision' ${source_dir}/${dirs[0]}/package.json)
-    check_update_revision=$(jq -r '.revision' ${source_dir}/${dirs[2]}/package.json)
-    core_revision=$(jq -r '.revision' ${source_dir}/${dirs[4]}/package.json)
-
-    if [ "${main_revision}" != "${check_update_revision}" ] || [ "${check_update_revision}" != "${core_revision}" ]; then
-        echo "The package.json revisions do not match. All revisions must be equal."
-        exit 1
-    else
-        echo "The package.json revision match."
-    fi
+    cp -r ${git_clone_tmp_dir}/plugins/main ${source_dir}
 }
 
 build_package(){
+    cd $source_dir
 
-    for item in ${packages_list[@]}; do
+    # Set pkg name
+    if [ -z "${app_revision}" ]; then
+        wazuh_app_pkg_name="wazuh-${wazuh_version}.zip"
+    else
+        wazuh_app_pkg_name="wazuh-${wazuh_version}-${app_revision}.zip"
+    fi
 
-        array=(${item//_/ })
+    # Build the package
+    yarn
+    OPENSEARCH_DASHBOARDS_VERSION=${plugin_platform_version} yarn build --deb --skip-archives --allow-root
 
-        if [ -z "${app_revision}" ]; then
-            wazuh_app_pkg_name="${array[1]}-${wazuh_version}.zip"
-        else
-            wazuh_app_pkg_name="${array[1]}-${wazuh_version}-${app_revision}.zip"
-        fi
+    find ${build_dir} -name "*.zip" -exec mv {} ${destination_dir}/${wazuh_app_pkg_name} \;
 
-        cd "${source_dir}/${array[0]}"
-        yarn
-        OPENSEARCH_DASHBOARDS_VERSION=${plugin_platform_version} yarn build --allow-root
-
-        find "${source_dir}/${array[0]}" -name "*.zip" -exec mv {} ${destination_dir}/${wazuh_app_pkg_name} \;
-
-        if [ "${checksum}" = "yes" ]; then
-            cd ${destination_dir} && sha512sum "${wazuh_app_pkg_name}" > "${checksum_dir}/${wazuh_app_pkg_name}".sha512
-        fi
-
-    done
+    if [ "${checksum}" = "yes" ]; then
+        cd ${destination_dir} && sha512sum "${wazuh_app_pkg_name}" > "${checksum_dir}/${wazuh_app_pkg_name}".sha512
+    fi
 
     exit 0
 }
 
-
 prepare_env
 download_plugin_platform_sources
 install_dependencies
-download_wazuh_app_sources
-check_revisions
+#download_wazuh_app_sources
 build_package
